@@ -1,0 +1,10 @@
+codespell's dictionaries, the files codespell_lib/data/dictionary*.txt in
+/usr/local/lib/codespell, are derivative works of English Wikipedia. They
+are the codespell project's improved version of the list of common
+misspellings that Wikipedia contributors maintain at
+https://en.wikipedia.org/wiki/Wikipedia:Lists_of_common_misspellings/For_machines
+
+The codespell project releases them under the Creative Commons
+Attribution-ShareAlike 3.0 Unported License (CC BY-SA 3.0). The license text
+is in the file CC-BY-SA-3.0 next to this one and at
+https://creativecommons.org/licenses/by-sa/3.0/.
