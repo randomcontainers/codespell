@@ -1,0 +1,82 @@
+name: codespell
+title: codespell
+summary: Finds common misspellings in source code, documentation and other text files, and fixes them in place with -w.
+homepage: https://github.com/codespell-project/codespell
+# codespell (GPL-2.0-only) and its dictionaries, which are derived from
+# English Wikipedia and released under CC BY-SA 3.0 (see licenses/). The
+# virtual environment has no pip.
+license: GPL-2.0-only AND CC-BY-SA-3.0
+upstream:
+  source: github-release
+  repository: codespell-project/codespell
+  # The release tags are lightweight, so their date is the commit's. The
+  # GitHub release carries the date the version was published.
+  tag-pattern: '^v(\d+\.\d+\.\d+)$'
+  version-template: '{1}'
+  versioning: semver
+  version: 2.4.3
+  # The files on PyPI have no provenance attestation, so the wheel is built
+  # from the release tag.
+  git:
+    url: https://github.com/codespell-project/codespell.git
+    tag: v{version}
+    commit: 57b21406f092110c18776e39b0bda50d37c945c8
+image:
+  entrypoint: [codespell]
+  cmd: [--help]
+  env: {PYTHONUNBUFFERED: "1"}
+test:
+  - |
+    codespell --version > version.txt
+    test "$(cat version.txt)" = "$VERSION" || { echo "expected $VERSION, got: $(cat version.txt)" >&2; exit 1; }
+  - |
+    # codespell exits with 65 (EX_DATAERR) when it finds a misspelling.
+    printf 'This is teh test.\n' > typo.txt
+    printf 'typo.txt:1: teh ==> the\n' > expected.txt
+    rc=0; codespell --disable-colors typo.txt > check.txt 2> check.err || rc=$?
+    if [ "$rc" != 65 ] || ! cmp -s expected.txt check.txt; then
+      echo "exit code $rc, expected 65 and 'typo.txt:1: teh ==> the'; output:" >&2; cat check.txt check.err >&2; exit 1
+    fi
+    # -w fixes words with a single suggestion and reports them on stderr.
+    rc=0; codespell --disable-colors -w typo.txt > fix.txt 2> fix.err || rc=$?
+    if [ "$rc" != 0 ] || ! grep -qxF 'FIXED: typo.txt' fix.err; then
+      echo "exit code $rc, expected 0 and 'FIXED: typo.txt' on stderr; output:" >&2; cat fix.txt fix.err >&2; exit 1
+    fi
+    printf 'This is the test.\n' | cmp - typo.txt || { echo "typo.txt was not fixed:" >&2; cat typo.txt >&2; exit 1; }
+  - |
+    # [tool.codespell] in pyproject.toml is read with Python's tomllib.
+    mkdir project
+    printf '%s\n' '[tool.codespell]' 'ignore-words-list = "teh"' > project/pyproject.toml
+    printf 'This is teh test.\n' > project/typo.txt
+    rc=0; (cd project && codespell --disable-colors typo.txt) > toml.txt 2>&1 || rc=$?
+    if [ "$rc" != 0 ] || [ -s toml.txt ]; then
+      echo "exit code $rc, expected 0 and no output with ignore-words-list = teh; output:" >&2; cat toml.txt >&2; exit 1
+    fi
+  - |
+    rc=0; printf 'recieve\n' | codespell --disable-colors - > stdin.txt 2>&1 || rc=$?
+    if [ "$rc" != 65 ] || ! grep -qF 'recieve ==> receive' stdin.txt; then
+      echo "exit code $rc, expected 65 and 'recieve ==> receive'; output:" >&2; cat stdin.txt >&2; exit 1
+    fi
+  - |
+    # --check-filenames also checks the names of the files.
+    mkdir names
+    printf 'Nothing to fix here.\n' > names/teh.txt
+    rc=0; codespell --disable-colors names > names-plain.txt 2>&1 || rc=$?
+    if [ "$rc" != 0 ]; then
+      echo "exit code $rc, expected 0 without --check-filenames; output:" >&2; cat names-plain.txt >&2; exit 1
+    fi
+    printf 'names/teh.txt: teh ==> the\n' > names-expected.txt
+    rc=0; codespell --disable-colors --check-filenames names > names.txt 2>&1 || rc=$?
+    if [ "$rc" != 65 ] || ! cmp -s names-expected.txt names.txt; then
+      echo "exit code $rc, expected 65 and 'names/teh.txt: teh ==> the'; output:" >&2; cat names.txt >&2; exit 1
+    fi
+examples:
+  - title: Check the files in the current directory and below, except hidden ones
+    command: docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" ghcr.io/randomcontainers/codespell .
+  - title: Fix the misspellings that have a single suggestion, in place
+    command: docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" ghcr.io/randomcontainers/codespell -w .
+  - title: Skip vendored and minified files and accept the words inout and ser
+    command: docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" ghcr.io/randomcontainers/codespell --skip './vendor,*.min.js' -L inout,ser .
+  - title: Check text from standard input
+    command: printf 'recieve\n' | docker run --rm -i ghcr.io/randomcontainers/codespell -
+source-release: true
