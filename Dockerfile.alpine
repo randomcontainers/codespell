@@ -1,0 +1,85 @@
+# syntax=docker/dockerfile:1.27.0@sha256:bde3983e9c939224420ddaf6b784cc30e09b035a4dea01f581230c50809f372e
+# check=error=true
+
+ARG BASE_IMAGE=alpine:3.24
+
+FROM ${BASE_IMAGE} AS source
+SHELL ["/bin/ash", "-euo", "pipefail", "-c"]
+RUN apk add --no-cache ca-certificates git
+
+# codespell's files on PyPI have no provenance attestation, so the release tag
+# is cloned instead, and it must point to the commit pinned in package.yml.
+# The build stage gets the files without .git, so setuptools_scm takes the
+# version from SETUPTOOLS_SCM_PRETEND_VERSION.
+ARG VERSION
+ARG SOURCE_COMMIT
+RUN printf '%s\n' "${VERSION}" | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+' \
+      || { echo "unexpected VERSION: ${VERSION}" >&2; exit 1; }; \
+    printf '%s\n' "${SOURCE_COMMIT}" | grep -Eqx '[0-9a-f]{40}' \
+      || { echo "SOURCE_COMMIT must be a full commit id" >&2; exit 1; }; \
+    git -c advice.detachedHead=false clone --quiet --depth 1 --branch "v${VERSION}" \
+      https://github.com/codespell-project/codespell.git /src/codespell; \
+    test "$(git -C /src/codespell rev-parse HEAD)" = "${SOURCE_COMMIT}" \
+      || { echo "tag v${VERSION} is not commit ${SOURCE_COMMIT}" >&2; exit 1; }; \
+    rm -rf /src/codespell/.git
+
+FROM ${BASE_IMAGE} AS build
+SHELL ["/bin/ash", "-euo", "pipefail", "-c"]
+RUN apk add --no-cache python3 py3-setuptools py3-setuptools_scm
+COPY --from=source /src/codespell /src/codespell
+
+# The wheel is built offline with the distro's setuptools and setuptools_scm,
+# which a build venv sees through --system-site-packages; pip stops if they do
+# not meet the release's build requirements. The build venv's pip installs the
+# wheel into codespell's venv, which has no pip of its own. codespell has no
+# dependencies; --no-index makes the install stop if a release adds one.
+ARG VERSION
+ARG SOURCE_COMMIT
+RUN --mount=type=bind,target=/context \
+    venv=/usr/local/lib/codespell; \
+    meta=/usr/local/share/randomcontainers/codespell; \
+    wheel="/tmp/dist/codespell-${VERSION}-py3-none-any.whl"; \
+    python3 -m venv --system-site-packages /tmp/buildenv; \
+    SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION}" /tmp/buildenv/bin/pip wheel \
+      --no-cache-dir --disable-pip-version-check --no-input \
+      --no-deps --no-build-isolation --check-build-dependencies --no-index \
+      -w /tmp/dist /src/codespell; \
+    test -f "$wheel" || { ls -l /tmp/dist >&2; echo "expected $wheel" >&2; exit 1; }; \
+    python3 -m venv --without-pip "$venv"; \
+    /tmp/buildenv/bin/pip --python "$venv/bin/python" install \
+      --no-cache-dir --disable-pip-version-check --no-input \
+      --no-index --report /tmp/pip-report.json "$wheel"; \
+    installed="$("$venv/bin/codespell" --version)"; \
+    if [ "$installed" != "${VERSION}" ]; then \
+      echo "the wheel installs codespell $installed, expected ${VERSION}" >&2; exit 1; \
+    fi; \
+    ln -s "$venv/bin/codespell" /usr/local/bin/codespell; \
+    mkdir -p "$meta"; \
+    printf '%s\n' "${VERSION}" > "$meta/version"; \
+    cp /context/runtime-deps.alpine "$meta/runtime-deps"; \
+    "$venv/bin/python" /context/scripts/metadata.py /tmp/pip-report.json "$meta"; \
+    test -s "$meta/licenses/codespell/COPYING"; \
+    cp /context/licenses/codespell/* "$meta/licenses/codespell/"; \
+    printf '%s\n' \
+      "https://github.com/codespell-project/codespell.git@${SOURCE_COMMIT}" \
+      "https://github.com/randomcontainers/codespell/releases/tag/v${VERSION}" \
+      > "$meta/source"; \
+    { \
+      echo "commit ${SOURCE_COMMIT}"; \
+      /tmp/buildenv/bin/python -c 'from importlib.metadata import version as v; print("built with setuptools", v("setuptools"), "and setuptools_scm", v("setuptools_scm"))'; \
+    } >> "$meta/buildinfo"; \
+    rm -rf /tmp/buildenv /tmp/dist /tmp/pip-report.json
+
+FROM ${BASE_IMAGE} AS slim
+RUN --mount=type=bind,source=runtime-deps.alpine,target=/tmp/runtime-deps \
+    set -eu; \
+    xargs apk add --no-cache ca-certificates tini < /tmp/runtime-deps; \
+    addgroup -g 1000 app; \
+    adduser -D -u 1000 -G app app; \
+    install -d -m 1777 /work /cache
+COPY --link --from=build /usr/local/ /usr/local/
+ENV LANG=C.UTF-8 XDG_CACHE_HOME=/cache PYTHONUNBUFFERED=1
+WORKDIR /work
+USER 1000:1000
+ENTRYPOINT ["tini", "--", "codespell"]
+CMD ["--help"]
