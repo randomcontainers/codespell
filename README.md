@@ -88,7 +88,7 @@ Use the newest exact version tag in place of `2.4.3` and update it by hand after
 
 ## codespell or typos
 
-[typos](https://github.com/crate-ci/typos) is a similar checker that also works from a list of known misspellings. It splits identifiers such as `getRecieveTime` and `max_lenght` into words before looking them up, and it skips the files that `.gitignore` lists. codespell reads each of those identifiers as one word that is not in its lists and lets it pass. Use typos when misspellings inside identifiers matter to you. Use codespell when your project already configures it, for example in `pyproject.toml` or as a pre-commit hook, or for prose, where the optional `informal` and `usage` dictionaries suggest more formal words and recommended terms.
+[typos](https://github.com/crate-ci/typos), published by this project as `ghcr.io/randomcontainers/typos` (see [randomcontainers/typos](https://github.com/randomcontainers/typos)), is a similar checker that also works from a list of known misspellings. It splits identifiers such as `getRecieveTime` and `max_lenght` into words before looking them up, and it skips the files that `.gitignore` lists. codespell reads each of those identifiers as one word that is not in its lists and lets it pass. Use typos when misspellings inside identifiers matter to you. Use codespell when your project already configures it, for example in `pyproject.toml` or as a pre-commit hook, or for prose, where the optional `informal` and `usage` dictionaries suggest more formal words and recommended terms.
 
 ## What is in the image
 
