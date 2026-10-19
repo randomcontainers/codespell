@@ -200,7 +200,7 @@ The corresponding source for each image:
 
 Python and the other Ubuntu and Alpine packages in the images keep their own licenses. The SBOM lists them.
 
-The files in this repository are available under the MIT license, see [LICENSE](LICENSE).
+The files in this repository are available under the MIT license, see [LICENSE](LICENSE), except the license texts in `licenses/`, which keep their own terms.
 
 ## Requesting a tool
 
